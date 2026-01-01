@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tourist Destination Search</title>
+  <style>
+    /* Background dengan gambar wisata + overlay gelap */
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  min-height: 100vh;
+  padding: 20px;
+  color: #f0f0f0;
+
+  background:
+    linear-gradient(
+      rgba(0, 0, 0, 0.45),
+      rgba(0, 0, 0, 0.65)
+    ),
+    url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1600&q=80')
+    no-repeat center center fixed;
+
+  background-size: cover;
+  background-attachment: fixed;
+}
+
+    h2 {
+      text-align: center;
+      color: #fff;
+      margin-bottom: 20px;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+    }
+
+    .search-box {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 30px;
+    }
+
+    input[type="text"] {
+      padding: 10px;
+      width: 80%;
+      max-width: 350px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      font-size: 16px;
+      outline: none;
+      border: 1px solid rgba(255,255,255,0.7);
+      background-color: rgba(255,255,255,0.2);
+      color: #fff;
+      transition: background-color 0.3s ease;
+    }
+
+    input[type="text"]::placeholder {
+      color: #ddd;
+    }
+
+    input[type="text"]:focus {
+      background-color: rgba(255,255,255,0.4);
+      border-color: #4a63e7;
+      color: #000;
+      font-weight: 600;
+    }
+
+    button {
+      padding: 10px 20px;
+      border: none;
+      background-color: #4a63e7;
+      color: white;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #3849bd;
+    }
+
+    #results {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      max-width: 800px;
+      margin: auto;
+      color: #222;
+      background: rgba(255,255,255,0.95);
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+
+    .result {
+      background: #fff;
+      padding: 15px;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      color: #333;
+    }
+
+    .result h3 {
+      margin: 0 0 10px;
+      color: #1a237e;
+    }
+
+    .result p {
+      margin: 6px 0;
+    }
+
+    .result img {
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+      margin-top: 10px;
+      border-radius: 10px;
+    }
+
+    @media (max-width: 600px) {
+      input[type="text"], button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Search Tourist Destination</h2>
+
+  <div class="search-box">
+    <input type="text" id="keyword" placeholder="Example: Kuta, Beach, Cave..." />
+    <button onclick="search()">Search</button>
+  </div>
+
+  <div id="results"></div>
+
+  <script>
+    async function search() {
+      const keyword = document.getElementById("keyword").value.trim();
+      const query = `
+PREFIX to: <http://www.semanticweb.org/harto/ontologies/2025/3/protegetesis#>
+
+SELECT DISTINCT
+  ?name ?activity ?description ?facility ?openingHours 
+  ?price ?rating ?timeEvent ?location ?images
+WHERE {
+  ?tourism to:TourismName ?name .
+  FILTER(CONTAINS(LCASE(STR(?name)), LCASE("${keyword}")))
+
+  OPTIONAL { ?tourism to:Activity     ?activity . }
+  OPTIONAL { ?tourism to:Description  ?description . }
+  OPTIONAL { ?tourism to:Facility     ?facility . }
+  OPTIONAL { ?tourism to:OpeningHours ?openingHours . }
+  OPTIONAL { ?tourism to:Price        ?price . }
+  OPTIONAL { ?tourism to:Ratings      ?rating . }
+  OPTIONAL { ?tourism to:TimeEvents   ?timeEvent . }
+  OPTIONAL { ?tourism to:Images       ?images . }
+
+  OPTIONAL {
+    ?tourism to:Locatedin ?loc .
+    BIND(STRAFTER(STR(?loc), "#") AS ?location)
+  }
+}
+
+      `;
+
+      const endpoint = "https://bret-postnuptial-phytogeographically.ngrok-free.dev/websemantik/sparql";
+      const resultsDiv = document.getElementById("results");
+      resultsDiv.innerHTML = "<p>Searching...</p>";
+
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/sparql-query",
+            "Accept": "application/sparql-results+json"
+          },
+          body: query
+        });
+
+        if (!response.ok) {
+          resultsDiv.innerHTML = "<p>Failed to fetch data. Please check your Fuseki server.</p>";
+          return;
+        }
+
+        const data = await response.json();
+        resultsDiv.innerHTML = "";
+
+        if (data.results.bindings.length === 0) {
+          resultsDiv.innerHTML = "<p>No tourist destinations found.</p>";
+        } else {
+          const grouped = {};
+
+          data.results.bindings.forEach(item => {
+            const name = item.name?.value || "-";
+            if (!grouped[name]) {
+              grouped[name] = {
+                activity: new Set(),
+                description: new Set(),
+                facility: new Set(),
+                openingHours: new Set(),
+                price: new Set(),
+                rating: new Set(),
+                timeEvent: new Set(),
+                location: new Set(),
+                images: new Set()
+              };
+            }
+            if (item.activity)     grouped[name].activity.add(item.activity.value);
+            if (item.description)  grouped[name].description.add(item.description.value);
+            if (item.facility)     grouped[name].facility.add(item.facility.value);
+            if (item.openingHours) grouped[name].openingHours.add(item.openingHours.value);
+            if (item.price)        grouped[name].price.add(item.price.value);
+            if (item.rating)       grouped[name].rating.add(item.rating.value);
+            if (item.timeEvent)    grouped[name].timeEvent.add(item.timeEvent.value);
+            if (item.location)     grouped[name].location.add(item.location.value);
+            if (item.images)       grouped[name].images.add(item.images.value);
+          });
+
+          for (const name in grouped) {
+            const div = document.createElement("div");
+            div.className = "result";
+            div.innerHTML = `
+              <h3>${name}</h3>
+              <p><strong>Location:</strong> ${[...grouped[name].location].join(", ") || "-"}</p>
+              <p><strong>Activities:</strong> ${[...grouped[name].activity].join(", ") || "-"}</p>
+              <p><strong>Description:</strong> ${[...grouped[name].description].join(", ") || "-"}</p>
+              <p><strong>Facilities:</strong> ${[...grouped[name].facility].join(", ") || "-"}</p>
+              <p><strong>Opening Hours:</strong> ${[...grouped[name].openingHours].join(", ") || "-"}</p>
+              <p><strong>Price:</strong> ${[...grouped[name].price].join(", ") || "-"}</p>
+              <p><strong>Rating:</strong> ${[...grouped[name].rating].join(", ") || "-"}</p>
+              <p><strong>Event Time:</strong> ${[...grouped[name].timeEvent].join(", ") || "-"}</p>
+            `;
+            const imageURLs = [...grouped[name].images];
+            if (imageURLs.length > 0) {
+              div.innerHTML += `<img src="${imageURLs[0]}" alt="${name} image">`;
+            }
+            resultsDiv.appendChild(div);
+          }
+        }
+      } catch (error) {
+        console.error("Error:", error);
+        resultsDiv.innerHTML = "<p>An error occurred while fetching data.</p>";
+      }
+    }
+  </script>
+
+</body>
+</html>
